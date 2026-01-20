@@ -2,6 +2,9 @@
 name = "cargoAllCleanGo"
 version = "0.1.0"
 edition = "2024"
+repository = "https://github.com/Uliboooo/cargo_all_clean"
+license = "MIT OR Apache-2.0"
+authors = ["Uliboooo uliboulibo@gmail.com"]
 
 [dependencies]
 anyhow = "1.0.100"
