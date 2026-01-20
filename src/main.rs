@@ -9,12 +9,17 @@ use rayon::iter::IntoParallelRefIterator;
 
 struct Cli {
     root_path: Option<String>,
+    cmd: Cmd,
 }
 
 fn resolve_args() -> Result<Cli, io::Error> {
     let args = env::args().collect::<Vec<_>>();
-    let path = args.get(1).map(|f| f.clone());
-    Ok(Cli { root_path: path })
+    let path = args.get(2).map(|f| f.clone());
+    let cmd = args.get(1).map(|f| f.to_string()).unwrap();
+    Ok(Cli {
+        root_path: path,
+        cmd: Cmd::from(cmd),
+    })
 }
 
 fn find_cargo_project(path: PathBuf) -> Option<Vec<PathBuf>> {
@@ -42,12 +47,44 @@ fn find_cargo_project(path: PathBuf) -> Option<Vec<PathBuf>> {
     Some(res)
 }
 
-fn clean(path: PathBuf) -> anyhow::Result<String> {
+#[derive(Debug, Clone, Copy)]
+enum Cmd {
+    Clean,
+    Build,
+    ReleaseBuild,
+}
+
+impl From<String> for Cmd {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "c" => Self::Clean,
+            "b" => Self::Build,
+            _ => Self::ReleaseBuild,
+        }
+    }
+}
+
+impl Cmd {
+    fn to_s(&self) -> Vec<String> {
+        let res = match self {
+            Cmd::Clean => vec!["clean"],
+            Cmd::Build => vec!["build"],
+            Cmd::ReleaseBuild => vec!["build", "--release"],
+        }
+        .iter()
+        .map(|f| f.to_string())
+        .collect::<Vec<_>>();
+        return res;
+    }
+}
+
+fn clean(path: PathBuf, cmd: Cmd) -> anyhow::Result<String> {
+    let cmd_args = cmd.to_s();
     let res = {
         // std::env::set_current_dir(path)?;
         std::process::Command::new("cargo")
             .current_dir(path)
-            .args(["clean"])
+            .args(cmd_args)
             .output()?
     };
     let r = { vec![res.stdout, res.stderr] }
@@ -66,6 +103,11 @@ fn main() {
         None => env::current_dir().unwrap(),
     };
 
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build_global()
+        .unwrap();
+
     let list = find_cargo_project(find_root_path).unwrap();
     let show_list = list
         .iter()
@@ -73,6 +115,8 @@ fn main() {
         .collect::<Vec<_>>()
         .join("\n");
 
+    let cmd = cli.cmd;
+    println!("run as {:?}", cmd.to_s().join(" "));
     println!("found these fodlers\n{show_list}\nok?(y/n)");
     let _ = io::stdout().flush();
     let mut buf = String::new();
@@ -83,7 +127,7 @@ fn main() {
 
     let result = list
         .par_iter()
-        .map(|f| clean(f.to_path_buf()))
+        .map(|f| clean(f.to_path_buf(), cmd))
         .filter_map(|f| f.ok())
         .collect::<String>();
 
